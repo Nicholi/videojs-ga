@@ -25,6 +25,17 @@ videojs.plugin 'ga', (options = {}) ->
   # if you didn't specify a name, it will be 'guessed' from the video src after metadatas are loaded
   eventLabel = options.eventLabel || dataSetupOptions.eventLabel
 
+  # in case the ga variables are using a different key
+  gaUniversalObject = options.gaUniversalObject || dataSetupOptions.gaUniversalObject || 'ga'
+  gaClassicObject = options.gaClassicObject || dataSetupOptions.gaClassicObject || '_gaq'
+
+  # if you need to specify the event sent for a certain tracking object
+  gaUniversalTracker = '';
+  if options.gaUniversalTracker
+    gaUniversalTracker = options.gaUniversalTracker + '.'
+  else if dataSetupOptions.gaUniversalTracker
+    gaUniversalTracker = dataSetupOptions.gaUniversalTracker + '.'
+  
   # init a few variables
   percentsAlreadyTracked = []
   seekStart = seekEnd = 0
@@ -109,15 +120,15 @@ videojs.plugin 'ga', (options = {}) ->
 
   sendbeacon = ( action, nonInteraction, value ) ->
     # console.log action, " ", nonInteraction, " ", value
-    if window.ga
-      ga 'send', 'event',
+    if window[gaUniversalObject]
+      window[gaUniversalObject] (gaUniversalTracker + 'send'), 'event',
         'eventCategory' 	: eventCategory
         'eventAction'		  : action
         'eventLabel'		  : eventLabel
         'eventValue'      : value
         'nonInteraction'	: nonInteraction
-    else if window._gaq
-      _gaq.push(['_trackEvent', eventCategory, action, eventLabel, value, nonInteraction])
+    else if window[gaClassicObject]
+      window[gaClassicObject].push(['_trackEvent', eventCategory, action, eventLabel, value, nonInteraction])
     else
       console.log("Google Analytics not detected")
     return
