@@ -81,7 +81,7 @@ videojs.plugin 'ga', (options = {}) ->
       lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
       timeDiff = currentTime - lastSecond
       if timeDiff >= secondsPlayedInterval
-          sendbeacon( 'seconds played', true, timeDiff)
+          sendbeacon( 'seconds played', true, timeDiff )
           secondsAlreadyTracked.push(currentTime)
 
     # we always start timestamps here to get used in seeking event
@@ -97,7 +97,7 @@ videojs.plugin 'ga', (options = {}) ->
       lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
       timeDiff = currentTime - lastSecond
       if timeDiff > 0
-        sendbeacon( 'seconds played', true, timeDiff)
+        sendbeacon( 'seconds played', true, timeDiff )
         # because we are about to reset secondsAlreadyTracked we don't need to push in current time
 
     # reset values for seeking and secondsPlayed, pretend like its the first run of video
@@ -128,7 +128,7 @@ videojs.plugin 'ga', (options = {}) ->
       lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
       timeDiff = currentTime - lastSecond
       if timeDiff > 0
-        sendbeacon( 'seconds played', true, timeDiff)
+        sendbeacon( 'seconds played', true, timeDiff )
         secondsAlreadyTracked.push(currentTime)
 
     if currentTime != duration && !seeking
@@ -141,24 +141,26 @@ videojs.plugin 'ga', (options = {}) ->
     currentTime = Math.round(@currentTime())
     isPaused = @paused()
 
-    seekStart = seekEnd
-    seekEnd = currentTime
+    # remember seekStart/seekEnd will be swapped in updatetime when it gets called AFTER this
+    # we just order them here to make sense of it
+    _seekStart = seekEnd
+    _seekEnd = currentTime
 
     # handle last watched segment prior to seek (similar to function to end)
     if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked
       lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
-      # seekStart is our last known watched timestamp
-      timeDiff = seekStart - lastSecond
+      # _seekStart is our last known watched timestamp
+      timeDiff = _seekStart - lastSecond
       if timeDiff > 0
-        sendbeacon( 'seconds played', true, timeDiff)
+        sendbeacon( 'seconds played', true, timeDiff )
         # because we are about to reset secondsAlreadyTracked we don't need to push in current time
 
     if "seek" in eventsToTrack
       # if the difference between the start and the end are greater than 1 it's a seek.
-      if Math.abs(seekStart - seekEnd) > 1
+      if Math.abs(_seekStart - _seekEnd) > 1
         seeking = true
-        sendbeacon( 'seek start', false, seekStart )
-        sendbeacon( 'seek end', false, seekEnd )
+        sendbeacon( 'seek start', false, _seekStart )
+        sendbeacon( 'seek end', false, _seekEnd )
 
     # reset to our new starting point, currentTime
     secondsAlreadyTracked = [currentTime]
