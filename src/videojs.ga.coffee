@@ -14,7 +14,7 @@ videojs.plugin 'ga', (options = {}) ->
     dataSetupOptions = parsedOptions.ga if parsedOptions.ga
 
   defaultsEventsToTrack = [
-    'loaded', 'percentsPlayed', 'start',
+    'loaded', 'percentsPlayed', 'secondsPlayed', 'start',
     'end', 'seek', 'play', 'pause', 'resize',
     'volumeChange', 'error', 'fullscreen'
   ]
@@ -38,6 +38,7 @@ videojs.plugin 'ga', (options = {}) ->
   
   # init a few variables
   percentsAlreadyTracked = []
+  secondsAlreadyTracked = []
   seekStart = seekEnd = 0
   seeking = false
 
@@ -54,7 +55,11 @@ videojs.plugin 'ga', (options = {}) ->
     currentTime = Math.round(@currentTime())
     duration = Math.round(@duration())
     percentPlayed = Math.round(currentTime/duration*100)
+    isPaused = @paused()
 
+    # this is somewhat janky as it ignores seeking
+    # it essentially is an indicator which ONLY tells how far someone ever got into a video, but not if they watched it completely up to that point
+    # it does however nicely handle "start" event
     for percent in [0..99] by percentsPlayedInterval
       if percentPlayed >= percent && percent not in percentsAlreadyTracked
 
@@ -66,23 +71,50 @@ videojs.plugin 'ga', (options = {}) ->
         if percentPlayed > 0
           percentsAlreadyTracked.push(percent)
 
-    if "seek" in eventsToTrack
-      seekStart = seekEnd
-      seekEnd = currentTime
-      # if the difference between the start and the end are greater than 1 it's a seek.
-      if Math.abs(seekStart - seekEnd) > 1
-        seeking = true
-        sendbeacon( 'seek start', false, seekStart )
-        sendbeacon( 'seek end', false, seekEnd )
+    # sometimes duration will be 0 on very first timeupdate call
+    if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked && duration && !isPaused && !seeking
+      # handles the case if through the magic of slow js we missed the event of currentTime % secondsPlayedInterval == 0, and now we are X seconds beyond secondsPlayedInterval
+      # we would still like to notify the seconds played (as we might miss the next secondsPlayedInterval as well)
+      # if all things play nicely we should always see events happen at secondsPlayedInterval, if things don't play nicely we also cover that too
+      # secondsPlayedInterval will be calculated from percentsPlayedInterval to be dynamic per video, as this will eventually lead us to hitting analytics.js limit
+      secondsPlayedInterval = percentsPlayedInterval / 100.0 * duration
+      lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
+      timeDiff = currentTime - lastSecond
+      if timeDiff >= secondsPlayedInterval
+          sendbeacon( 'seconds played', true, timeDiff)
+          secondsAlreadyTracked.push(currentTime)
+
+    # we always start timestamps here to get used in seeking event
+    seekStart = seekEnd
+    seekEnd = currentTime
 
     return
 
   end = ->
+    # send beacon for the final time segment
+    currentTime = Math.round(@currentTime())
+    if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked
+      lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
+      timeDiff = currentTime - lastSecond
+      if timeDiff > 0
+        sendbeacon( 'seconds played', true, timeDiff)
+        # because we are about to reset secondsAlreadyTracked we don't need to push in current time
+
+    # reset values for seeking and secondsPlayed, pretend like its the first run of video
+    secondsAlreadyTracked = []
+    seekStart = seekEnd = 0
+    seeking = false
+
     sendbeacon( 'end', true )
     return
 
   play = ->
     currentTime = Math.round(@currentTime())
+
+    # play events are fired after seeking it seems?
+    # so we can always reset our secondsAlreadyTracked here
+    secondsAlreadyTracked = [currentTime]
+
     sendbeacon( 'play', true, currentTime )
     seeking = false
     return
@@ -90,8 +122,46 @@ videojs.plugin 'ga', (options = {}) ->
   pause = ->
     currentTime = Math.round(@currentTime())
     duration = Math.round(@duration())
+
+    # we also want to be sure to send the last segment's time played (if greater than 0) on pauses
+    if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked
+      lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
+      timeDiff = currentTime - lastSecond
+      if timeDiff > 0
+        sendbeacon( 'seconds played', true, timeDiff)
+        secondsAlreadyTracked.push(currentTime)
+
     if currentTime != duration && !seeking
       sendbeacon( 'pause', false, currentTime )
+    return
+
+  seeking = ->
+    # called just prior to seek completion (seeked)
+    # we want to always reset our seconds here
+    currentTime = Math.round(@currentTime())
+    isPaused = @paused()
+
+    seekStart = seekEnd
+    seekEnd = currentTime
+
+    # handle last watched segment prior to seek (similar to function to end)
+    if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked
+      lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
+      # seekStart is our last known watched timestamp
+      timeDiff = seekStart - lastSecond
+      if timeDiff > 0
+        sendbeacon( 'seconds played', true, timeDiff)
+        # because we are about to reset secondsAlreadyTracked we don't need to push in current time
+
+    if "seek" in eventsToTrack
+      # if the difference between the start and the end are greater than 1 it's a seek.
+      if Math.abs(seekStart - seekEnd) > 1
+        seeking = true
+        sendbeacon( 'seek start', false, seekStart )
+        sendbeacon( 'seek end', false, seekEnd )
+
+    # reset to our new starting point, currentTime
+    secondsAlreadyTracked = [currentTime]
     return
 
   # value between 0 (muted) and 1
@@ -139,6 +209,7 @@ videojs.plugin 'ga', (options = {}) ->
     @on("ended", end) if "end" in eventsToTrack
     @on("play", play) if "play" in eventsToTrack
     @on("pause", pause) if "pause" in eventsToTrack
+    @on("seeking", seeking)
     @on("volumechange", volumeChange) if "volumeChange" in eventsToTrack
     @on("resize", resize) if "resize" in eventsToTrack
     @on("error", error) if "error" in eventsToTrack
