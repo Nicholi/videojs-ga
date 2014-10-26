@@ -105,7 +105,8 @@ videojs.plugin 'ga', (options = {}) ->
     seekStart = seekEnd = 0
     seeking = false
 
-    sendbeacon( 'end', true )
+    if "end" in eventsToTrack
+      sendbeacon( 'end', true )
     return
 
   play = ->
@@ -115,7 +116,8 @@ videojs.plugin 'ga', (options = {}) ->
     # so we can always reset our secondsAlreadyTracked here
     secondsAlreadyTracked = [currentTime]
 
-    sendbeacon( 'play', true, currentTime )
+    if "play" in eventsToTrack
+      sendbeacon( 'play', true, currentTime )
     seeking = false
     return
 
@@ -131,7 +133,7 @@ videojs.plugin 'ga', (options = {}) ->
         sendbeacon( 'seconds played', true, timeDiff )
         secondsAlreadyTracked.push(currentTime)
 
-    if currentTime != duration && !seeking
+    if "pause" in eventsToTrack && currentTime != duration && !seeking
       sendbeacon( 'pause', false, currentTime )
     return
 
@@ -155,10 +157,10 @@ videojs.plugin 'ga', (options = {}) ->
         sendbeacon( 'seconds played', true, timeDiff )
         # because we are about to reset secondsAlreadyTracked we don't need to push in current time
 
-    if "seek" in eventsToTrack
-      # if the difference between the start and the end are greater than 1 it's a seek.
-      if Math.abs(_seekStart - _seekEnd) > 1
-        seeking = true
+    # if the difference between the start and the end are greater than 1 it's a seek.
+    if Math.abs(_seekStart - _seekEnd) > 1
+      seeking = true
+      if "seek" in eventsToTrack
         sendbeacon( 'seek start', false, _seekStart )
         sendbeacon( 'seek end', false, _seekEnd )
 
@@ -208,9 +210,9 @@ videojs.plugin 'ga', (options = {}) ->
   @ready ->
     @on("loadedmetadata", loaded)
     @on("timeupdate", timeupdate)
-    @on("ended", end) if "end" in eventsToTrack
-    @on("play", play) if "play" in eventsToTrack
-    @on("pause", pause) if "pause" in eventsToTrack
+    @on("ended", end)
+    @on("play", play)
+    @on("pause", pause) if "pause" in eventsToTrack || "secondsPlayed" in eventsToTrack
     @on("seeking", seeking)
     @on("volumechange", volumeChange) if "volumeChange" in eventsToTrack
     @on("resize", resize) if "resize" in eventsToTrack
