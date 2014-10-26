@@ -22,8 +22,14 @@ videojs.plugin 'ga', (options = {}) ->
   percentsPlayedInterval = options.percentsPlayedInterval || dataSetupOptions.percentsPlayedInterval || 10
 
   eventCategory = options.eventCategory || dataSetupOptions.eventCategory || 'Video'
-  # if you didn't specify a name, it will be 'guessed' from the video src after metadatas are loaded
+  # if you didn't specify a name, it will be 'guessed' from the video src after metadatas are loaded and/or play events
   eventLabel = options.eventLabel || dataSetupOptions.eventLabel
+  eventLabelSet = if eventLabel then true else false
+  # or this callback is used to determine how to construct eventLabel
+  eventLabelFactory = options.eventLabelFactory || (vjs) -> return vjs.currentSrc().split("/").slice(-1)[0]
+
+  # if any custom metrics or dimensions are to be constructed this callback is also called metadata is loaded and/or play events
+  customDimensionMetrics = options.customDimensionMetrics || (vjs, ga) -> return
 
   # in case the ga variables are using a different key
   gaUniversalObject = options.gaUniversalObject || dataSetupOptions.gaUniversalObject || 'ga'
@@ -42,13 +48,15 @@ videojs.plugin 'ga', (options = {}) ->
   seekStart = seekEnd = 0
   seeking = false
 
-  loaded = ->
-    unless eventLabel
-      eventLabel = @currentSrc().split("/").slice(-1)[0].replace(/\.(\w{3,4})(\?.*)?$/i,'')
+  loadstart = ->
+    unless eventLabelSet
+      eventLabel = eventLabelFactory(this)
+    customDimensionMetrics(this, window[gaUniversalObject])
+    return
 
+  loadedmetadata = ->
     if "loaded" in eventsToTrack
       sendbeacon( 'loadedmetadata', true )
-
     return
 
   timeupdate = ->
@@ -109,16 +117,20 @@ videojs.plugin 'ga', (options = {}) ->
       sendbeacon( 'end', true )
     return
 
-  play = ->
+  playing = ->
+    # playing event is really the only reliable event which is fired crossbrowser and crosstech where we can load info for currentSrc
     currentTime = Math.round(@currentTime())
 
-    # play events are fired after seeking it seems?
-    # so we can always reset our secondsAlreadyTracked here
     secondsAlreadyTracked = [currentTime]
+
+    seeking = false
+
+    unless eventLabelSet
+      eventLabel = eventLabelFactory(this)
+    customDimensionMetrics(this, window[gaUniversalObject])
 
     if "play" in eventsToTrack
       sendbeacon( 'play', true, currentTime )
-    seeking = false
     return
 
   pause = ->
@@ -208,10 +220,11 @@ videojs.plugin 'ga', (options = {}) ->
     return
 
   @ready ->
-    @on("loadedmetadata", loaded)
+    @on("loadstart", loadstart)
+    @on("loadedmetadata", loadedmetadata)
     @on("timeupdate", timeupdate)
     @on("ended", end)
-    @on("play", play)
+    @on("playing", playing)
     @on("pause", pause) if "pause" in eventsToTrack || "secondsPlayed" in eventsToTrack
     @on("seeking", seeking)
     @on("volumechange", volumeChange) if "volumeChange" in eventsToTrack
