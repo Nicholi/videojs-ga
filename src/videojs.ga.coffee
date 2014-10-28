@@ -20,6 +20,17 @@ videojs.plugin 'ga', (options = {}) ->
   ]
   eventsToTrack = options.eventsToTrack || dataSetupOptions.eventsToTrack || defaultsEventsToTrack
   percentsPlayedInterval = options.percentsPlayedInterval || dataSetupOptions.percentsPlayedInterval || 10
+  # will be required to be set on live streams, otherwise we cannot calculate the secondsPlayedInterval from a non-existant duration
+  # if not set, the secondsPlayedInterval will be dynamically generated from duration of video dependent on percentsPlayedInterval
+  secondsPlayedInterval = options.secondsPlayedInterval || dataSetupOptions.secondsPlayedInterval || 0
+
+  # necessary to let our internal logic know NOT to use things like duration
+  if options.isLive != null
+    isLive = options.isLive
+  else if dataSetupOptions.isLive != null
+    isLive = dataSetupOptions.isLive
+  else
+    isLive = false
 
   eventCategory = options.eventCategory || dataSetupOptions.eventCategory || 'Video'
   # if you didn't specify a name, it will be 'guessed' from the video src after metadatas are loaded and/or play events
@@ -62,33 +73,34 @@ videojs.plugin 'ga', (options = {}) ->
   timeupdate = ->
     currentTime = Math.round(@currentTime())
     duration = Math.round(@duration())
-    percentPlayed = Math.round(currentTime/duration*100)
     isPaused = @paused()
 
     # this is somewhat janky as it ignores seeking
     # it essentially is an indicator which ONLY tells how far someone ever got into a video, but not if they watched it completely up to that point
     # it does however nicely handle "start" event
-    for percent in [0..99] by percentsPlayedInterval
-      if percentPlayed >= percent && percent not in percentsAlreadyTracked
+    if (!isLive) 
+      percentPlayed = Math.round(currentTime/duration*100)
+      for percent in [0..99] by percentsPlayedInterval
+        if percentPlayed >= percent && percent not in percentsAlreadyTracked
 
-        if "start" in eventsToTrack && percent == 0 && percentPlayed > 0
-          sendbeacon( 'start', true )
-        else if "percentsPlayed" in eventsToTrack && percentPlayed != 0
-          sendbeacon( 'percent played', true, percent )
+          if "start" in eventsToTrack && percent == 0 && percentPlayed > 0
+            sendbeacon( 'start', true )
+          else if "percentsPlayed" in eventsToTrack && percentPlayed != 0
+            sendbeacon( 'percent played', true, percent )
 
-        if percentPlayed > 0
-          percentsAlreadyTracked.push(percent)
+          if percentPlayed > 0
+            percentsAlreadyTracked.push(percent)
 
     # sometimes duration will be 0 on very first timeupdate call
-    if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked && duration && !isPaused && !seeking
-      # handles the case if through the magic of slow js we missed the event of currentTime % secondsPlayedInterval == 0, and now we are X seconds beyond secondsPlayedInterval
-      # we would still like to notify the seconds played (as we might miss the next secondsPlayedInterval as well)
-      # if all things play nicely we should always see events happen at secondsPlayedInterval, if things don't play nicely we also cover that too
-      # secondsPlayedInterval will be calculated from percentsPlayedInterval to be dynamic per video, as this will eventually lead us to hitting analytics.js limit
-      secondsPlayedInterval = percentsPlayedInterval / 100.0 * duration
+    if "secondsPlayed" in eventsToTrack && currentTime not in secondsAlreadyTracked && (duration || isLive) && !isPaused && !seeking
+      # handles the case if through the magic of slow js we missed the event of currentTime % _secondsPlayedInterval == 0, and now we are X seconds beyond _secondsPlayedInterval
+      # we would still like to notify the seconds played (as we might miss the next _secondsPlayedInterval as well)
+      # if all things play nicely we should always see events happen at _secondsPlayedInterval, if things don't play nicely we also cover that too
+      # _secondsPlayedInterval will be calculated from percentsPlayedInterval to be dynamic per video, as this will eventually lead us to hitting analytics.js limit
+      _secondsPlayedInterval = if secondsPlayedInterval then secondsPlayedInterval else (percentsPlayedInterval / 100.0 * duration)
       lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
       timeDiff = currentTime - lastSecond
-      if timeDiff >= secondsPlayedInterval
+      if timeDiff >= _secondsPlayedInterval
           sendbeacon( 'seconds played', true, timeDiff )
           secondsAlreadyTracked.push(currentTime)
 
