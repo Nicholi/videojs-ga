@@ -32,6 +32,8 @@ videojs.plugin 'ga', (options = {}) ->
   else
     isLive = false
 
+  defaultLiveSecondsPlayedInterval = 60
+
   eventCategory = options.eventCategory || dataSetupOptions.eventCategory || 'Video'
   # if you didn't specify a name, it will be 'guessed' from the video src after metadatas are loaded and/or play events
   eventLabel = options.eventLabel || dataSetupOptions.eventLabel
@@ -97,7 +99,7 @@ videojs.plugin 'ga', (options = {}) ->
       # we would still like to notify the seconds played (as we might miss the next _secondsPlayedInterval as well)
       # if all things play nicely we should always see events happen at _secondsPlayedInterval, if things don't play nicely we also cover that too
       # _secondsPlayedInterval will be calculated from percentsPlayedInterval to be dynamic per video, as this will eventually lead us to hitting analytics.js limit
-      _secondsPlayedInterval = if secondsPlayedInterval then secondsPlayedInterval else (percentsPlayedInterval / 100.0 * duration)
+      _secondsPlayedInterval = if secondsPlayedInterval then secondsPlayedInterval else if isLive then defaultLiveSecondsPlayedInterval else (percentsPlayedInterval / 100.0 * duration)
       lastSecond = if secondsAlreadyTracked.length > 0 then secondsAlreadyTracked[secondsAlreadyTracked.length-1] else 0
       timeDiff = currentTime - lastSecond
       if timeDiff >= _secondsPlayedInterval
